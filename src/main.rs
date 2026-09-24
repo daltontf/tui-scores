@@ -291,7 +291,11 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         ) {
             ScrollView(
                 flex_direction: Direction::Vertical,
-                block: Block::bordered().title(Line::from(format!("Scores - {} (l)", league_name)).centered()),
+                block: Block::bordered()
+                    .title(Line::from(format!(" {} Scores ", league_name)).centered())
+                    .title_bottom("[L]:League ")
+                // TODO .title_bottom(" [Left/Right Arrows] - Day ")
+                    .title_bottom(Line::from("[Esc]:Exit ").right_aligned())
             ) {
                 if let Some(json_payload) = json_payload.data.read().as_ref() {
                     for (i, row) in json_payload.events.chunks(columns).enumerate() {
@@ -313,6 +317,7 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             ) {
                 Select::<&'static str>(
                     top_title: Some(Line::from("Select League").centered()),
+                    bottom_title: Some(Line::from("[Esc]:Cancel ").right_aligned()), 
                     items: LEAGUES.iter().map(|(name, _)| *name).collect::<Vec<&'static str>>(),
                     default_index: Some(league.get()),
                     on_select: move |name: &'static str| {

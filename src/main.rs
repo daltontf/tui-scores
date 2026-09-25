@@ -115,7 +115,7 @@ const LEAGUES: &[(&str, &str)] = &[
     ("German 2.Bundesliga", "http://site.api.espn.com/apis/site/v2/sports/soccer/ger.2/scoreboard"),
 ];
 
-async fn fetch_scores(url: &str, date: time::Date) -> JsonPayload {
+async fn fetch_scores(url: &str, date: time::Date, cache_avoidance: &str) -> JsonPayload {
     if url.is_empty() {
         return JsonPayload { events: vec![] };
     }
@@ -123,10 +123,10 @@ async fn fetch_scores(url: &str, date: time::Date) -> JsonPayload {
     // ESPN expects dates=YYYYMMDD; some league urls already carry a query string.
     let separator = if url.contains('?') { '&' } else { '?' };
     let url = format!(
-        "{url}{separator}dates={:04}{:02}{:02}",
+        "{url}{separator}dates={:04}{:02}{:02}{cache_avoidance}", 
         date.year(),
         u8::from(date.month()),
-        date.day()
+        date.day()       
     );
 
     let client = reqwest::Client::new();
@@ -230,23 +230,36 @@ fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
 
 #[component]
 fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    let now = OffsetDateTime::now_utc();
+
     let (term_width, _term_height) = hooks.use_terminal_size();
-
     let mut league = hooks.use_state(|| 0usize);
-
-    let mut selected_date = hooks.use_state(|| OffsetDateTime::now_utc().date());
+    let mut now_unix_timestamp = hooks.use_state(|| now.unix_timestamp());
+    let mut selected_date = hooks.use_state(|| now.date());
 
     let (league_name, league_url) = LEAGUES[league.get()];
     // Snapshot the current value; the closure must own its data ('static).
-    let url_value: String = league_url.to_string();    
+    let url_value: String = league_url.to_string();  
+  
+    let refresh_text = if now.date() == selected_date.get() && !url_value.is_empty() {
+        " [R]:Refresh "
+    } else {
+        ""
+    };  
 
     let date_value = selected_date.get();
+    let now_unix_timestamp_value = now_unix_timestamp.get();
 
     let json_payload = hooks.use_async_state({
             let url_value = url_value.clone();
-            async move || Ok::<_, JsonPayload>(fetch_scores(&url_value, date_value).await)
+            let cache_avoidance = if now.date() == selected_date.get() {
+                format!("?secs={}", now_unix_timestamp_value)
+            } else {
+                "".to_string()
+            };
+            async move || Ok::<_, JsonPayload>(fetch_scores(&url_value, date_value, &cache_avoidance).await)
         },
-        (url_value, date_value), // deps: re-runs the fetch when the url or date changes
+        (url_value, date_value, now_unix_timestamp_value), // deps: re-runs the fetch when the url or date changes
     );
 
     let mut exit = hooks.use_exit();
@@ -307,8 +320,12 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             KeyCode::Char('d') | KeyCode::Char('D') => {
                 datepicker_modal_open.set(true);
                 EventResult::Consumed
+            },
+            KeyCode::Char('r') | KeyCode::Char('R') if now.date() == selected_date.get() => {
+                now_unix_timestamp.set(now.unix_timestamp()); // force a fetch
+                EventResult::Consumed
             }
-            KeyCode::Esc => {
+            KeyCode::Char('q') | KeyCode::Char('Q') => {
                 exit();
                 EventResult::Consumed
             }
@@ -333,8 +350,9 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                         selected_date.get().day()
                     )).centered())
                     .title_bottom("[L]:League ")
-                    .title_bottom(" [D]: Select Date ")
-                    .title_bottom(Line::from("[Esc]:Exit ").right_aligned())
+                    .title_bottom(" [D]:Date ")
+                    .title_bottom(refresh_text)
+                    .title_bottom(Line::from("[Q]:Quit ").right_aligned())
             ) {
                 if let Some(json_payload) = json_payload.data.read().as_ref() {
                     for (i, row) in json_payload.events.chunks(columns).enumerate() {

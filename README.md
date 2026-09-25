@@ -7,8 +7,3 @@ An exercise in "kicking the tires" with Ratatui-Kit [https://yexiyue.github.io/r
 ### Quirks
 
 - All sports list the home team second which is against the convention used by soccer.
-
-### Future Features
-
-- Refresh current if events manually and/or on an interval if date is current.
-

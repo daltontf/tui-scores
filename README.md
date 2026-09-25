@@ -10,9 +10,5 @@ An exercise in "kicking the tires" with Ratatui-Kit [https://yexiyue.github.io/r
 
 ### Future Features
 
-- Ability to use arrows to change the date. At that point only scores the API gives for that day will be shown.
-
-### Maybe Future Features
-
-- After implementing date traversal, a date picker to go directly to a specific date.
+- Refresh current if events manually and/or on an interval if date is current.
 

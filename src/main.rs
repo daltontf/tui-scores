@@ -3,7 +3,7 @@ use ratatui_kit::{
     prelude::*,
     ratatui::{
         layout::{Alignment, Constraint, Direction},
-        style::{Color, Style},
+        style::{Color, Style, Stylize},
         widgets::{ Block },
         text::Line,
     },
@@ -13,6 +13,10 @@ use chrono::{Local, NaiveDateTime};
 use reqwest::Response;
 use serde::Deserialize;
 use tokio;
+
+use time::{OffsetDateTime};
+
+use tui_scores::tui_date_picker::{TuiDatePicker};
 
 #[derive(Deserialize, Clone)]
 struct CompetitorCuratedRank {
@@ -111,16 +115,25 @@ const LEAGUES: &[(&str, &str)] = &[
     ("German 2.Bundesliga", "http://site.api.espn.com/apis/site/v2/sports/soccer/ger.2/scoreboard"),
 ];
 
-async fn fetch_scores(url: &str) -> JsonPayload {
+async fn fetch_scores(url: &str, date: time::Date) -> JsonPayload {
     if url.is_empty() {
         return JsonPayload { events: vec![] };
     }
-    
+
+    // ESPN expects dates=YYYYMMDD; some league urls already carry a query string.
+    let separator = if url.contains('?') { '&' } else { '?' };
+    let url = format!(
+        "{url}{separator}dates={:04}{:02}{:02}",
+        date.year(),
+        u8::from(date.month()),
+        date.day()
+    );
+
     let client = reqwest::Client::new();
 
     let response: Response = client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, "curl/8.5.0") 
+        .get(&url)
+        .header(reqwest::header::USER_AGENT, "curl/8.5.0") // Works
         .send()
         .await
         .unwrap();
@@ -166,8 +179,7 @@ fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
                 width: Constraint::Length(CARD_WIDTH),
                 key: props.event.id.clone(),
                 border_style: Style::new().fg(Color::LightGreen),
-                top_title: Some(Line::from(scheduled_string(&competition.date, ""))),
-                
+                top_title: Some(Line::from(scheduled_string(&competition.date, ""))),                
             ) {
                 View(flex_direction: Direction::Horizontal, height: Constraint::Length(1)) {
                     View(width: Constraint::Fill(1)) {
@@ -220,31 +232,29 @@ fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
 fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let (term_width, _term_height) = hooks.use_terminal_size();
 
-    // Index into LEAGUES, and whether the dropdown is showing.
     let mut league = hooks.use_state(|| 0usize);
-    let mut dropdown_open = hooks.use_state(|| false);
 
-    //let date = hooks.use_state(|| "20260922".to_string());
+    let mut selected_date = hooks.use_state(|| OffsetDateTime::now_utc().date());
 
     let (league_name, league_url) = LEAGUES[league.get()];
     // Snapshot the current value; the closure must own its data ('static).
-    let url_value: String = league_url.to_string();
+    let url_value: String = league_url.to_string();    
 
-    let json_payload = hooks.use_async_state(
-        {
+    let date_value = selected_date.get();
+
+    let json_payload = hooks.use_async_state({
             let url_value = url_value.clone();
-            async move || Ok::<_, JsonPayload>(fetch_scores(&url_value).await)
+            async move || Ok::<_, JsonPayload>(fetch_scores(&url_value, date_value).await)
         },
-        url_value, // deps: re-runs the fetch when the url changes
+        (url_value, date_value), // deps: re-runs the fetch when the url or date changes
     );
 
     let mut exit = hooks.use_exit();
 
-    // While the modal is open it owns an exclusive input layer, so the
-    // main handler below goes quiet and this one closes the modal.
-    let layer = hooks.use_input_layer(dropdown_open.get(), true);
-
-    hooks.use_event_handler(EventScope::Layer(layer), EventPriority::High, move |event| {
+    let mut league_modal_open = hooks.use_state(|| false);
+    let league_modal_layer = hooks.use_input_layer(league_modal_open.get(), true);
+    
+    hooks.use_event_handler(EventScope::Layer(league_modal_layer), EventPriority::High, move |event| {
         let Event::Key(key) = event else {
             return EventResult::Ignored;
         };
@@ -254,7 +264,27 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
 
         match key.code {
             KeyCode::Esc | KeyCode::Char('l') | KeyCode::Char('L') => {
-                dropdown_open.set(false);
+                league_modal_open.set(false);
+                EventResult::Consumed
+            }, 
+            _ => EventResult::Ignored,
+        }
+    });
+
+    let mut datepicker_modal_open = hooks.use_state(|| false);
+    let datepicker_model_layer = hooks.use_input_layer(datepicker_modal_open.get(), true);
+    
+    hooks.use_event_handler(EventScope::Layer(datepicker_model_layer), EventPriority::High, move |event| {
+        let Event::Key(key) = event else {
+            return EventResult::Ignored;
+        };
+        if key.kind != KeyEventKind::Press {
+            return EventResult::Ignored;
+        }
+
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('d') | KeyCode::Char('D') => {
+                datepicker_modal_open.set(false);
                 EventResult::Consumed
             }
             _ => EventResult::Ignored,
@@ -271,7 +301,11 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
 
         match key.code {
             KeyCode::Char('l') | KeyCode::Char('L') => {
-                dropdown_open.set(true);
+                league_modal_open.set(true);
+                EventResult::Consumed
+            },
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                datepicker_modal_open.set(true);
                 EventResult::Consumed
             }
             KeyCode::Esc => {
@@ -292,9 +326,14 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             ScrollView(
                 flex_direction: Direction::Vertical,
                 block: Block::bordered()
-                    .title(Line::from(format!(" {} Scores ", league_name)).centered())
+                    .title(Line::from(format!(" {} Scores {:04}-{:02}-{:02} ", 
+                        league_name,
+                        selected_date.get().year(),
+                        u8::from(selected_date.get().month()),
+                        selected_date.get().day()
+                    )).centered())
                     .title_bottom("[L]:League ")
-                // TODO .title_bottom(" [Left/Right Arrows] - Day ")
+                    .title_bottom(" [D]: Select Date ")
                     .title_bottom(Line::from("[Esc]:Exit ").right_aligned())
             ) {
                 if let Some(json_payload) = json_payload.data.read().as_ref() {
@@ -310,8 +349,8 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                 }
             }
             Modal(
-                open: dropdown_open.get(),
-                layer: Some(layer),
+                open: league_modal_open.get(),
+                layer: Some(league_modal_layer),
                 width: Constraint::Length(36),
                 height: Constraint::Length(LEAGUES.len() as u16 + 2),
             ) {
@@ -324,9 +363,30 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                         if let Some(i) = LEAGUES.iter().position(|(n, _)| *n == name) {
                             league.set(i);
                         }
-                        dropdown_open.set(false);
+                        league_modal_open.set(false);
                     },
                 )
+            }
+            Modal(
+                open: datepicker_modal_open.get(),
+                layer: Some(datepicker_model_layer),
+                width: Constraint::Length(24),
+                // 2 border rows + month header + weekday header + up to 6 week rows
+                height: Constraint::Length(10),
+            ) {
+                Border(
+                    border_style: Style::new().blue(),
+                    top_title: Line::from(" Select Day ").blue().bold().centered(),
+                    bottom_title: Line::from(" [Esc]: Cancel ").dark_gray().centered(),
+                ) {
+                    TuiDatePicker(
+                        date: selected_date.get(),
+                        on_select: move |date| { 
+                            selected_date.set(date);
+                            datepicker_modal_open.set(false);
+                        }
+                    )
+                }
             }
         }
     )

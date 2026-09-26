@@ -53,7 +53,7 @@ struct EventStatus {
 
 #[derive(Deserialize, Clone)]
 struct VenueAddress {
-    city: String,
+    city: Option<String>,
     state: Option<String>,
     country: Option<String>,
 }
@@ -81,8 +81,7 @@ struct EventCompetition {
 #[derive(Deserialize, Default, Clone)]
 struct JsonEvent {
     id: String,
-    competitions: Vec<EventCompetition>,
-    status: EventStatus,
+    competitions: Vec<EventCompetition>
 }
 
 #[derive(Deserialize)]
@@ -102,18 +101,80 @@ const LEAGUES: &[(&str, &str)] = &[
     ("NHL", "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard"),
     ("MLS", "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard"),
     ("NCAA Football", "http://site.web.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?group=80"),
-    ("NCAA Men's Basketball", "http://site.web.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard"),
+    ("NCAA Men's Basketball", "http://site.web.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?group=80"),
+    ("NCAA Men's Soccer", "http://site.web.api.espn.com/apis/site/v2/sports/soccer/usa.ncaa.m.1/scoreboard"),
+    ("NCAA Men's Hockey", "http://site.api.espn.com/apis/site/v2/sports/hockey/mens-college-hockey/scoreboard"),    
+    ("NCAA Baseball", "http://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"), 
     ("NCAA Women's Basketball", "http://site.web.api.espn.com/apis/site/v2/sports/basketball/womens-college-basketball/scoreboard"),
     ("NCAA Women's Volleyball", "http://site.web.api.espn.com/apis/site/v2/sports/volleyball/womens-college-volleyball/scoreboard"),
+    ("NCAA Women's Soccer", "http://site.web.api.espn.com/apis/site/v2/sports/soccer/usa.ncaa.w.1/scoreboard"),
+    ("NCAA Women's Hockey", "http://site.api.espn.com/apis/site/v2/sports/hockey/womens-college-hockey/scoreboard"),    
+    ("NCAA Women's Softball", "http://site.api.espn.com/apis/site/v2/sports/baseball/college-softball/scoreboard"),
     ("NWSL", "http://site.api.espn.com/apis/site/v2/sports/soccer/usa.nwsl/scoreboard"),
     ("USL Championship", "http://site.api.espn.com/apis/site/v2/sports/soccer/usa.usl.1/scoreboard"),
     ("U.S. Open Cup", "http://site.api.espn.com/apis/site/v2/sports/soccer/usa.open/scoreboard"),
-    ("UEFA Champions League", "http://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard"),
+    ("Liga MX", "http://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/scoreboard"),
     ("English Premier League", "http://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"),
     ("English Championship", "http://site.api.espn.com/apis/site/v2/sports/soccer/eng.2/scoreboard"),
     ("German Bundesliga", "http://site.api.espn.com/apis/site/v2/sports/soccer/ger.1/scoreboard"),
     ("German 2.Bundesliga", "http://site.api.espn.com/apis/site/v2/sports/soccer/ger.2/scoreboard"),
+    ("Italian Serie A", "http://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard"), 
+    ("French Ligue 1", "http://site.api.espn.com/apis/site/v2/sports/soccer/fra.1/scoreboard"),
+    ("Spanish LALIGA", "http://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard"),
+    ("UEFA Champions League", "http://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard"),
+    ("UEFA Europa League", "http://site.api.espn.com/apis/site/v2/sports/soccer/uefa.europa/scoreboard")
 ];
+
+#[derive(Props, Clone, Default)]
+struct RenderEventProps {
+    event_id: String,
+    date: String,
+    top_team: String,
+    top_team_score: String,
+    bottom_team: String,
+    bottom_team_score: String,
+    status: String,
+    location: String,
+    broadcast: String
+}
+
+fn team_string(competitor: &CompetitionCompetitor) -> String {
+    match &competitor.curated_rank {
+        Some(curated_rank) if curated_rank.current <= 25 => format!("{} #{}", competitor.team.display_name, curated_rank.current),
+        _ => competitor.team.display_name.clone()  
+    }
+}
+
+// ESPN dates look like "2026-09-23T00:00Z" (no seconds), so RFC 3339 parsing won't work.
+fn scheduled_string(date: &str, fallback: &str) -> String {
+    NaiveDateTime::parse_from_str(date, "%Y-%m-%dT%H:%MZ")
+        .map(|utc| utc.and_utc().with_timezone(&Local).format("%a %b %-d, %-I:%M %p").to_string())
+        .unwrap_or_else(|_| fallback.to_string())
+}
+
+fn event_to_render_props(json_event: &JsonEvent) -> Option<RenderEventProps> {
+    json_event.competitions.first().map(|competition| {
+        RenderEventProps {
+            event_id: json_event.id.clone(),
+            date: scheduled_string(&competition.date, ""),
+            top_team: competition.competitors.get(1).map(team_string).unwrap_or_default(),
+            top_team_score: competition.competitors.get(1).map(|competitor| competitor.score.clone()).unwrap_or_default(),
+            bottom_team: competition.competitors.get(0).map(team_string).unwrap_or_default(),
+            bottom_team_score: competition.competitors.get(0).map(|competitor| competitor.score.clone()).unwrap_or_default(),
+            status: if competition.status.type_.name != "STATUS_SCHEDULED" {
+                        competition.status.type_.short_detail.clone()
+                    } else {
+                        "".to_string()
+                    },
+            location: competition.venue.as_ref()
+                        .map(|venue| format!("{} {}", venue.address.city.as_ref().unwrap_or(&"".into()), 
+                            venue.address.state.as_ref().or(venue.address.country.as_ref()).unwrap_or(&"".into()))).unwrap_or_default(),
+            broadcast: competition.broadcasts.iter()
+                        .find(|broadcast| broadcast.market == "national")
+                        .and_then(|broadcast| broadcast.names.first()).cloned().unwrap_or_default()            
+        }
+    })
+}
 
 async fn fetch_scores(url: &str, date: time::Date, cache_avoidance: &str) -> JsonPayload {
     if url.is_empty() {
@@ -141,91 +202,45 @@ async fn fetch_scores(url: &str, date: time::Date, cache_avoidance: &str) -> Jso
     response.json().await.unwrap()
 }
 
-#[tokio::main]
-async fn main() {
-    element!(Scores)
-        .fullscreen()
-        .await
-        .expect("Failed to run the application")
-}
-
-#[derive(Props, Clone, Default)]
-struct RenderEventProps {
-    event: JsonEvent
-}
-
-fn team_string(competitor: &CompetitionCompetitor) -> String {
-    match &competitor.curated_rank {
-        Some(curated_rank) if curated_rank.current <= 25 => format!("{} #{}", competitor.team.display_name, curated_rank.current),
-        _ => competitor.team.display_name.clone()  
-    }
-}
-
-// ESPN dates look like "2026-09-23T00:00Z" (no seconds), so RFC 3339 parsing won't work.
-fn scheduled_string(date: &str, fallback: &str) -> String {
-    NaiveDateTime::parse_from_str(date, "%Y-%m-%dT%H:%MZ")
-        .map(|utc| utc.and_utc().with_timezone(&Local).format("%a %b %-d, %-I:%M %p").to_string())
-        .unwrap_or_else(|_| fallback.to_string())
-}
-
 #[component]
 fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
-    if let Some(competition) = props.event.competitions.get(0) {
-        let team1 = competition.competitors.get(1).map(team_string).unwrap_or_default();
-        let team0 = competition.competitors.get(0).map(team_string).unwrap_or_default();
-
-        element!(
-            Border(
-                width: Constraint::Length(CARD_WIDTH),
-                key: props.event.id.clone(),
-                border_style: Style::new().fg(Color::LightGreen),
-                top_title: Some(Line::from(scheduled_string(&competition.date, ""))),                
-            ) {
-                View(flex_direction: Direction::Horizontal, height: Constraint::Length(1)) {
-                    View(width: Constraint::Fill(1)) {
-                        Text(text: team1, style: Style::new().bold())
-                    }
-                    View(width: Constraint::Length(5)) {
-                        Text(text: competition.competitors.get(1).map(|competitor| competitor.score.clone()).unwrap_or_default(), alignment: Alignment::Right, style: Style::new().bold())
+    element!(
+        Border(
+            width: Constraint::Length(CARD_WIDTH),
+            key: props.event_id.clone(),
+            border_style: Style::new().fg(Color::LightGreen),
+            top_title: Some(Line::from(props.date.clone())),                
+        ) {
+            View(flex_direction: Direction::Horizontal, height: Constraint::Length(1)) {
+                View(width: Constraint::Fill(1)) {
+                    Text(text: props.top_team.clone(), style: Style::new().bold())
+                }
+                View(width: Constraint::Length(5)) {
+                    Text(text: props.top_team_score.clone(), alignment: Alignment::Right, style: Style::new().bold())
                     }
                 }
                 View(flex_direction: Direction::Horizontal, height: Constraint::Length(1)) {
                     View(width: Constraint::Fill(1)) {
-                        Text(text: team0, style: Style::new().bold())
+                        Text(text: props.bottom_team.clone(), style: Style::new().bold())
                     }
                     View(width: Constraint::Length(5)) {
-                        Text(text: competition.competitors.get(0).map(|competitor| competitor.score.clone()).unwrap_or_default(), alignment: Alignment::Right, style: Style::new().bold())
+                        Text(text: props.bottom_team_score.clone(), alignment: Alignment::Right, style: Style::new().bold())
                     }
                 }
-                if competition.status.type_.name != "STATUS_SCHEDULED" {
-                    Text(text: props.event.status.type_.short_detail.clone(), style: Style::new().fg(Color::Yellow).bold())
-                } else {
-                    Text(text: "")
-                }
+                Text(text: props.status.clone(), style: Style::new().fg(Color::Yellow).bold())
                 View(flex_direction: Direction::Horizontal, height: Constraint::Length(1)) {
                     View(width: Constraint::Fill(2)) {
-                        Text(text: competition.venue.as_ref()
-                            .map(|venue| format!("{} {}", venue.address.city, 
-                                venue.address.state.as_ref().or(venue.address.country.as_ref()).unwrap_or(&"".into()))).unwrap_or_default(),
+                        Text(text: props.location.clone(),
                             style: Style::new().fg(Color::LightCyan))
                     }
                     View(width: Constraint::Fill(1)) {
-                        Text(text: competition.broadcasts.iter()
-                            .find(|broadcast| broadcast.market == "national")
-                            .and_then(|broadcast| broadcast.names.first()).cloned().unwrap_or_default(),
+                        Text(text: props.broadcast.clone(),
                             alignment: Alignment::Right,
                             style: Style::new().fg(Color::LightCyan))
                     }
                 }    
             }
-        )
-    } else {
-        element!(
-            Border(width: Constraint::Length(CARD_WIDTH), key: props.event.id.clone()) {
-                Text(text: "No competition data available", style: Style::new().fg(Color::Red).bold())
-            }
-        )
-    }
+      )  
 }
 
 #[component]
@@ -355,10 +370,13 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     .title_bottom(Line::from("[Q]:Quit ").right_aligned())
             ) {
                 if let Some(json_payload) = json_payload.data.read().as_ref() {
-                    for (i, row) in json_payload.events.chunks(columns).enumerate() {
+                    for (i, row) in json_payload.events.iter()
+                        .filter_map(event_to_render_props)
+                        .collect::<Vec<RenderEventProps>>()
+                        .chunks(columns).enumerate() {
                         View(flex_direction: Direction::Horizontal, height: Constraint::Length(6), key: i) {
                             for event in row {
-                                RenderEvent(event: event.clone())
+                                RenderEvent(..event.to_owned())
                             }
                         }
                     }
@@ -408,4 +426,12 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             }
         }
     )
+}
+
+#[tokio::main]
+async fn main() {
+    element!(Scores)
+        .fullscreen()
+        .await
+        .expect("Failed to run the application")
 }

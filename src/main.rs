@@ -46,7 +46,7 @@ struct StatusType {
 
 #[derive(Deserialize,Default, Clone)]
 #[serde(rename_all = "camelCase")]
-struct EventStatus {
+struct CompetitionStatus {
     #[serde(rename = "type")]
     type_: StatusType,
 }
@@ -73,20 +73,20 @@ struct CompetitionBroadcast {
 struct EventCompetition {
     competitors: Vec<CompetitionCompetitor>,
     date: String,
-    status: EventStatus,
+    status: CompetitionStatus,
     venue: Option<CompetitionVenue>,  
     broadcasts: Vec<CompetitionBroadcast>, 
 }
 
 #[derive(Deserialize, Default, Clone)]
-struct JsonEvent {
+struct PayloadEvent {
     id: String,
     competitions: Vec<EventCompetition>
 }
 
 #[derive(Deserialize)]
 struct JsonPayload {
-    events: Vec<JsonEvent>,
+    events: Vec<PayloadEvent>,
 }
 
 const CARD_WIDTH: u16 = 40;
@@ -152,7 +152,7 @@ fn scheduled_string(date: &str, fallback: &str) -> String {
         .unwrap_or_else(|_| fallback.to_string())
 }
 
-fn event_to_render_props(json_event: &JsonEvent) -> Option<RenderEventProps> {
+fn event_to_render_props(json_event: &PayloadEvent) -> Option<RenderEventProps> {
     json_event.competitions.first().map(|competition| {
         RenderEventProps {
             event_id: json_event.id.clone(),
@@ -245,7 +245,7 @@ fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
 
 #[component]
 fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-    let now = OffsetDateTime::now_utc();
+    let now = OffsetDateTime::now_local().expect("Can't get local time");
 
     let (term_width, _term_height) = hooks.use_terminal_size();
     let mut league = hooks.use_state(|| 0usize);
@@ -435,3 +435,6 @@ async fn main() {
         .await
         .expect("Failed to run the application")
 }
+
+#[cfg(test)]
+mod tests;

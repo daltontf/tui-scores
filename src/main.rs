@@ -147,7 +147,7 @@ struct RenderEventProps {
     bottom_team: String,
     bottom_team_score: String,
     description: String,
-    status: String,
+    status: Option<String>,
     location: String,
     broadcast: String
 }
@@ -189,9 +189,9 @@ fn event_to_render_props(json_event: &PayloadEvent) -> Option<RenderEventProps> 
                 result
             },
             status: if competition.status.type_.name != SCHEDULED_STATUS {
-                        competition.status.type_.short_detail.clone()
+                        Some(competition.status.type_.short_detail.clone())
                     } else {
-                        "".into()
+                        None
                     },
             location: competition.venue.as_ref()
                         .map(|venue| format!("{} {}", venue.address.city.as_ref().unwrap_or(&"".into()), 
@@ -254,7 +254,9 @@ fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
                         Text(text: props.bottom_team_score.clone(), alignment: Alignment::Right, style: Style::new().bold())
                     }
                 }
-                Text(text: props.status.clone(), style: Style::new().fg(Color::Yellow).bold())
+                if let Some(status) = &props.status {
+                    Text(text: status.clone(), style: Style::new().fg(Color::Yellow).bold())
+                }
                 Text(text: props.description.clone(), style: Style::new().fg(Color::Blue))   
                 View(flex_direction: Direction::Horizontal, height: Constraint::Length(1)) {
                     View(width: Constraint::Fill(2)) {

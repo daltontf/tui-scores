@@ -69,7 +69,7 @@ fn test_it() {
         .satisfies(|it| &it.bottom_team, |bottom_team| {
             bottom_team.is_equal_to("South Central Louisiana State University Mud Dogs #20"); })
         .satisfies(|it| &it.status, |status| {
-            status.is_equal_to(""); })
+            status.is_equal_to(None); })
         .satisfies(|it| &it.location, |location| {
             location.is_equal_to("Pasadena CA"); })
         .satisfies(|it| &it.broadcast, |broadcast| {
@@ -80,7 +80,7 @@ fn test_it() {
 
     assert_that!(event_to_render_props(&event)).get_some()
         .satisfies(|it| &it.status, |status| {
-            status.is_equal_to("End of 1st"); });
+            status.is_equal_to(Some("End of 1st".to_string())); });
 }
 
 #[test]

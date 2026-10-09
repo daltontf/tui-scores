@@ -101,7 +101,7 @@ struct JsonPayload {
     events: Vec<PayloadEvent>,
 }
 
-const CARD_WIDTH: u16 = 45;
+const MIN_CARD_WIDTH: u16 = 40;
 const BORDER_PADDING: u16 = 4; // account for ScrollView's border/scrollbar
 const SCHEDULED_STATUS: &str = "STATUS_SCHEDULED";
 
@@ -111,6 +111,7 @@ const LEAGUES: &[(&str, &str)] = &[
     ("UFL", "https://site.api.espn.com/apis/site/v2/sports/football/ufl/scoreboard"),
     ("MLB", "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"),
     ("NBA", "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"),
+    ("WNBA", "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard"),
     ("NHL", "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard"),
     ("MLS", "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard"),
     ("NCAA Football", "http://site.web.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?group=80"),
@@ -140,6 +141,7 @@ const LEAGUES: &[(&str, &str)] = &[
 
 #[derive(Props, Clone, Default)]
 struct RenderEventProps {
+    card_width: u16,
     event_id: String,
     date: String,
     top_team: String,
@@ -169,6 +171,7 @@ fn scheduled_string(date: &str, fallback: &str) -> String {
 fn event_to_render_props(json_event: &PayloadEvent) -> Option<RenderEventProps> {
     json_event.competitions.first().map(|competition| {
         RenderEventProps {
+            card_width: MIN_CARD_WIDTH,
             event_id: json_event.id.clone(),
             date: scheduled_string(&competition.date, ""),
             top_team: competition.competitors.get(1).map(team_string).unwrap_or_default(),
@@ -233,7 +236,7 @@ async fn fetch_scores(url: &str, date: time::Date, cache_avoidance: &str) -> Jso
 fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
     element!(
         Border(
-            width: Constraint::Length(CARD_WIDTH),
+            width: Constraint::Length(props.card_width),
             key: props.event_id.clone(),
             border_style: Style::new().fg(Color::LightGreen),
             top_title: Some(Line::from(props.date.clone())),                
@@ -378,14 +381,19 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         }
     });
 
-    let columns = ((term_width.saturating_sub(BORDER_PADDING)) / CARD_WIDTH).max(1) as usize;
+    let event_props = json_payload.data.read().as_ref().map(|payload| payload.events.iter()
+        .filter_map(event_to_render_props)
+        .collect::<Vec<RenderEventProps>>())
+        .unwrap_or_default();
 
-    let cell_height = match json_payload.data.read().as_ref() {
-        Some(json_payload) if json_payload.events.iter()
-           .all(|event| event.competitions.first()
-               .map_or(true, |competition| competition.status.type_.name == SCHEDULED_STATUS)) => 6,
-        _ => 7
-    };
+    let card_width = event_props.iter().map(|props| {
+        props.description.chars().count() as u16 + 2 // 2 for the border
+    }).max().unwrap_or(0).max(MIN_CARD_WIDTH);
+
+    let columns = ((term_width.saturating_sub(BORDER_PADDING)) / card_width).max(1) as usize;
+    
+    // Don't waste space on the status line if all events are only scheduled; otherwise, leave room for the status line.
+    let cell_height = if event_props.iter().all(|event| event.status.is_none()) { 6 } else { 7 };
 
     element!(
         Center(
@@ -406,19 +414,12 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     .title_bottom(refresh_text)
                     .title_bottom(Line::from("[Q]:Quit ").right_aligned())
             ) {
-                if let Some(json_payload) = json_payload.data.read().as_ref() {
-                    for (i, row) in json_payload.events.iter()
-                        .filter_map(event_to_render_props)
-                        .collect::<Vec<RenderEventProps>>()
-                        .chunks(columns).enumerate() {
-                        View(flex_direction: Direction::Horizontal, height: Constraint::Length(cell_height), key: i) {
-                            for event in row {
-                                RenderEvent(..event.to_owned())
-                            }
+                for (i, row) in event_props.chunks(columns).enumerate() {
+                    View(flex_direction: Direction::Horizontal, height: Constraint::Length(cell_height), key: i) {
+                        for event in row {
+                            RenderEvent(card_width: card_width, ..event.to_owned())
                         }
                     }
-                } else {
-                    Text(text: "Loading...", style: Style::new().fg(Color::Yellow))
                 }
             }
             Modal(

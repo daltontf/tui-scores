@@ -86,6 +86,7 @@ fn test_it() {
 #[test]
 fn test_render() {
     let buffer = render_frame(element!(RenderEvent (
+        card_width: 45u16,
         top_team: "South Georgia Catfish".to_string(),
         top_team_score: "41".to_string(),
         bottom_team: "South Central Louisiana State University Mud Dogs #20".to_string(),
@@ -94,10 +95,10 @@ fn test_render() {
         description: "Fiction Team Bowl".to_string(),
         location: "Pasadena CA".to_string(),
         broadcast: "MTV".to_string()        
-    )), CARD_WIDTH, 7);
+    )), 45, 7);
 
     let content: Vec<String> = buffer.content()
-        .chunks(CARD_WIDTH as usize)
+        .chunks(45 as usize)
         .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
         .collect();
 

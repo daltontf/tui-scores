@@ -13,3 +13,4 @@ tokio = { version = "1", features = ["full"] }
 
 [dev-dependencies]
 assertr = "0.7.1"
+ratatui-kit = { version = "0.10.3", features = ["test-util"] }

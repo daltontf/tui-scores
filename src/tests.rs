@@ -1,6 +1,7 @@
 use super::*;
 
 use assertr::prelude::*;
+use ratatui_kit::test_util::render_frame;
 
 const STATUS_SCHEDULED:&str = "STATUS_SCHEDULED";
 
@@ -40,6 +41,14 @@ fn create_base_event() -> PayloadEvent {
                         country: Option::None
                     }
                 }),
+                notes: vec![
+                  CompetitionNote { 
+                    headline: "Fiction Bowl".into()
+                  }  
+                ],
+                series: Some(CompetitionSeries {
+                    summary: "Not a series".into()
+                }),
                 broadcasts: vec![
                     CompetitionBroadcast {
                         market: "national".into(),
@@ -72,4 +81,31 @@ fn test_it() {
     assert_that!(event_to_render_props(&event)).get_some()
         .satisfies(|it| &it.status, |status| {
             status.is_equal_to("End of 1st"); });
+}
+
+#[test]
+fn test_render() {
+    let buffer = render_frame(element!(RenderEvent (
+        top_team: "South Georgia Catfish".to_string(),
+        top_team_score: "41".to_string(),
+        bottom_team: "South Central Louisiana State University Mud Dogs #20".to_string(),
+        bottom_team_score: "38".to_string(),
+        status: "Postponed".to_string(),
+        description: "Fiction Team Bowl".to_string(),
+        location: "Pasadena CA".to_string(),
+        broadcast: "MTV".to_string()        
+    )), CARD_WIDTH, 7);
+
+    let content: Vec<String> = buffer.content()
+        .chunks(CARD_WIDTH as usize)
+        .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+        .collect();
+
+    assert_eq!("┌───────────────────────────────────────────┐", content.get(0).unwrap());
+    assert_eq!("│South Georgia Catfish                    41│", content.get(1).unwrap());
+    assert_eq!("│South Central Louisiana State Universi   38│", content.get(2).unwrap());
+    assert_eq!("│Postponed                                  │", content.get(3).unwrap());
+    assert_eq!("│Fiction Team Bowl                          │", content.get(4).unwrap());
+    assert_eq!("│Pasadena CA                             MTV│", content.get(5).unwrap());
+    assert_eq!("└───────────────────────────────────────────┘", content.get(6).unwrap());
 }

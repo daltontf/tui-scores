@@ -102,14 +102,19 @@ impl Component for CalendarView {
     }
 
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_, '_>) {
-        let mut event_store = CalendarEventStore::today(Style::default().red().bold());
-        event_store.add(self.date.0, Style::default().blue().italic());
+        let mut event_store = CalendarEventStore::today(Style::default().underlined().bold());
+
+        if self.date.0 == OffsetDateTime::now_local().expect("Can't get local time").date() {
+            event_store.add(self.date.0, Style::default().underlined().blue().bold());
+        } else {
+            event_store.add(self.date.0, Style::default().blue().bold());
+        }
         
         let monthly = Monthly::new(
             self.date.0,
             event_store
         ).show_month_header(Modifier::BOLD)
-            .show_weekdays_header(Modifier::ITALIC);
+         .show_weekdays_header(Modifier::ITALIC);
         drawer.render_widget(monthly, drawer.area);
     }
 }

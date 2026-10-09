@@ -70,12 +70,24 @@ struct CompetitionBroadcast {
 }
 
 #[derive(Deserialize, Clone)]
+struct CompetitionNote {
+    headline: String
+}
+
+#[derive(Deserialize, Clone)]
+struct CompetitionSeries {
+    summary: String
+}
+
+#[derive(Deserialize, Clone)]
 struct EventCompetition {
     competitors: Vec<CompetitionCompetitor>,
     date: String,
     status: CompetitionStatus,
     venue: Option<CompetitionVenue>,  
     broadcasts: Vec<CompetitionBroadcast>, 
+    notes: Vec<CompetitionNote>,
+    series: Option<CompetitionSeries>
 }
 
 #[derive(Deserialize, Default, Clone)]
@@ -89,8 +101,9 @@ struct JsonPayload {
     events: Vec<PayloadEvent>,
 }
 
-const CARD_WIDTH: u16 = 40;
+const CARD_WIDTH: u16 = 45;
 const BORDER_PADDING: u16 = 4; // account for ScrollView's border/scrollbar
+const SCHEDULED_STATUS: &str = "STATUS_SCHEDULED";
 
 const LEAGUES: &[(&str, &str)] = &[
     ("", ""),
@@ -133,6 +146,7 @@ struct RenderEventProps {
     top_team_score: String,
     bottom_team: String,
     bottom_team_score: String,
+    description: String,
     status: String,
     location: String,
     broadcast: String
@@ -161,10 +175,23 @@ fn event_to_render_props(json_event: &PayloadEvent) -> Option<RenderEventProps> 
             top_team_score: competition.competitors.get(1).map(|competitor| competitor.score.clone()).unwrap_or_default(),
             bottom_team: competition.competitors.get(0).map(team_string).unwrap_or_default(),
             bottom_team_score: competition.competitors.get(0).map(|competitor| competitor.score.clone()).unwrap_or_default(),
-            status: if competition.status.type_.name != "STATUS_SCHEDULED" {
+            description: {
+                let mut result = String::new();
+                if let Some(note) = competition.notes.first() {
+                    result.push_str(&note.headline);
+                }
+                if let Some(series) = &competition.series {
+                    if !result.is_empty() {
+                        result.push_str(" ");
+                    }
+                    result.push_str(&series.summary);
+                }
+                result
+            },
+            status: if competition.status.type_.name != SCHEDULED_STATUS {
                         competition.status.type_.short_detail.clone()
                     } else {
-                        "".to_string()
+                        "".into()
                     },
             location: competition.venue.as_ref()
                         .map(|venue| format!("{} {}", venue.address.city.as_ref().unwrap_or(&"".into()), 
@@ -228,6 +255,7 @@ fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
                     }
                 }
                 Text(text: props.status.clone(), style: Style::new().fg(Color::Yellow).bold())
+                Text(text: props.description.clone(), style: Style::new().fg(Color::Blue))   
                 View(flex_direction: Direction::Horizontal, height: Constraint::Length(1)) {
                     View(width: Constraint::Fill(2)) {
                         Text(text: props.location.clone(),
@@ -350,6 +378,13 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
 
     let columns = ((term_width.saturating_sub(BORDER_PADDING)) / CARD_WIDTH).max(1) as usize;
 
+    let cell_height = match json_payload.data.read().as_ref() {
+        Some(json_payload) if json_payload.events.iter()
+           .all(|event| event.competitions.first()
+               .map_or(true, |competition| competition.status.type_.name == SCHEDULED_STATUS)) => 6,
+        _ => 7
+    };
+
     element!(
         Center(
             width: Constraint::Percentage(100),
@@ -374,7 +409,7 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                         .filter_map(event_to_render_props)
                         .collect::<Vec<RenderEventProps>>()
                         .chunks(columns).enumerate() {
-                        View(flex_direction: Direction::Horizontal, height: Constraint::Length(6), key: i) {
+                        View(flex_direction: Direction::Horizontal, height: Constraint::Length(cell_height), key: i) {
                             for event in row {
                                 RenderEvent(..event.to_owned())
                             }

@@ -3,7 +3,7 @@ use ratatui_kit::{
     prelude::*,
     ratatui::{
         layout::{Alignment, Constraint, Direction},
-        style::{Color, Style, Stylize},
+        style::{Style, Stylize},
         widgets::{ Block },
         text::Line,
     },
@@ -12,11 +12,22 @@ use ratatui_kit::{
 use chrono::{Local, NaiveDateTime};
 use reqwest::Response;
 use serde::Deserialize;
+use std::sync::LazyLock;
 use tokio;
 
 use time::{OffsetDateTime};
 
 use tui_scores::tui_date_picker::{TuiDatePicker};
+
+// Treats a null array as empty and drops null elements, e.g. `null` or `[null]` -> `[]`.
+fn vec_skip_nulls<'de, D, T>(d: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let items = Option::<Vec<Option<T>>>::deserialize(d)?;
+    Ok(items.unwrap_or_default().into_iter().flatten().collect())
+}
 
 #[derive(Deserialize, Clone)]
 struct CompetitorCuratedRank {
@@ -30,10 +41,18 @@ struct CompetitorTeam {
 }
 
 #[derive(Deserialize, Clone)]
+struct CompetitorRecord {
+    name: String,
+    summary: String
+}
+
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct CompetitionCompetitor {
     team: CompetitorTeam,
     curated_rank: Option<CompetitorCuratedRank>,
+    #[serde(default, deserialize_with = "vec_skip_nulls")]
+    records: Vec<CompetitorRecord>,
     score: String,
 }
 
@@ -60,7 +79,7 @@ struct VenueAddress {
 
 #[derive(Deserialize, Clone)]
 struct CompetitionVenue {
-    address: VenueAddress,
+    address: Option<VenueAddress>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -80,6 +99,11 @@ struct CompetitionSeries {
 }
 
 #[derive(Deserialize, Clone)]
+struct CompetitionOdds {
+    details: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
 struct EventCompetition {
     competitors: Vec<CompetitionCompetitor>,
     date: String,
@@ -87,7 +111,9 @@ struct EventCompetition {
     venue: Option<CompetitionVenue>,  
     broadcasts: Vec<CompetitionBroadcast>, 
     notes: Vec<CompetitionNote>,
-    series: Option<CompetitionSeries>
+    series: Option<CompetitionSeries>,
+    #[serde(default, deserialize_with = "vec_skip_nulls")]
+    odds: Vec<CompetitionOdds>
 }
 
 #[derive(Deserialize, Default, Clone)]
@@ -101,46 +127,39 @@ struct JsonPayload {
     events: Vec<PayloadEvent>,
 }
 
+const LEAGUES_CSV: &str = include_str!("../leagues.csv");
+
+// (name, url) pairs borrowed from LEAGUES_CSV; index 0 is the empty "no league" entry.
+static LEAGUES: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
+    LEAGUES_CSV.lines().filter_map(|line| {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+             return None;
+        }
+        let (name, url) = line.split_once(',')?;
+        Some((name.trim().trim_matches('"'), url.trim().trim_matches('"')))
+    }).collect()
+});
+
 const MIN_CARD_WIDTH: u16 = 40;
 const BORDER_PADDING: u16 = 4; // account for ScrollView's border/scrollbar
 const SCHEDULED_STATUS: &str = "STATUS_SCHEDULED";
+const RECORD_OVERALL: &str = "overall";
+const NATIONAL: &str = "national";
 
-const LEAGUES: &[(&str, &str)] = &[
-    ("", ""),
-    ("NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"),
-    ("UFL", "https://site.api.espn.com/apis/site/v2/sports/football/ufl/scoreboard"),
-    ("MLB", "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"),
-    ("NBA", "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"),
-    ("WNBA", "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard"),
-    ("NHL", "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard"),
-    ("MLS", "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard"),
-    ("NCAA Football", "http://site.web.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?group=80"),
-    ("NCAA Men's Basketball", "http://site.web.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?group=80"),
-    ("NCAA Men's Soccer", "http://site.web.api.espn.com/apis/site/v2/sports/soccer/usa.ncaa.m.1/scoreboard"),
-    ("NCAA Men's Hockey", "http://site.api.espn.com/apis/site/v2/sports/hockey/mens-college-hockey/scoreboard"),    
-    ("NCAA Baseball", "http://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard"), 
-    ("NCAA Women's Basketball", "http://site.web.api.espn.com/apis/site/v2/sports/basketball/womens-college-basketball/scoreboard"),
-    ("NCAA Women's Volleyball", "http://site.web.api.espn.com/apis/site/v2/sports/volleyball/womens-college-volleyball/scoreboard"),
-    ("NCAA Women's Soccer", "http://site.web.api.espn.com/apis/site/v2/sports/soccer/usa.ncaa.w.1/scoreboard"),
-    ("NCAA Women's Hockey", "http://site.api.espn.com/apis/site/v2/sports/hockey/womens-college-hockey/scoreboard"),    
-    ("NCAA Women's Softball", "http://site.api.espn.com/apis/site/v2/sports/baseball/college-softball/scoreboard"),
-    ("NWSL", "http://site.api.espn.com/apis/site/v2/sports/soccer/usa.nwsl/scoreboard"),
-    ("USL Championship", "http://site.api.espn.com/apis/site/v2/sports/soccer/usa.usl.1/scoreboard"),
-    ("U.S. Open Cup", "http://site.api.espn.com/apis/site/v2/sports/soccer/usa.open/scoreboard"),
-    ("Liga MX", "http://site.api.espn.com/apis/site/v2/sports/soccer/mex.1/scoreboard"),
-    ("English Premier League", "http://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"),
-    ("English Championship", "http://site.api.espn.com/apis/site/v2/sports/soccer/eng.2/scoreboard"),
-    ("German Bundesliga", "http://site.api.espn.com/apis/site/v2/sports/soccer/ger.1/scoreboard"),
-    ("German 2.Bundesliga", "http://site.api.espn.com/apis/site/v2/sports/soccer/ger.2/scoreboard"),
-    ("Italian Serie A", "http://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard"), 
-    ("French Ligue 1", "http://site.api.espn.com/apis/site/v2/sports/soccer/fra.1/scoreboard"),
-    ("Spanish LALIGA", "http://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard"),
-    ("UEFA Champions League", "http://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard"),
-    ("UEFA Europa League", "http://site.api.espn.com/apis/site/v2/sports/soccer/uefa.europa/scoreboard")
-];
+const SCORE_BORDER_STYLE: Style = Style::new().light_green();
+const TEAM_NAME_STYLE: Style = Style::new().bold();
+const TEAM_RECORD_STYLE: Style = Style::new().gray();
+const TEAM_SCORE_STYLE: Style = Style::new().bold().light_blue();
+const STATUS_STYLE: Style = Style::new().bold().yellow();
+const ODDS_STYLE: Style = Style::new().gray();
+const DESCRIPTION_STYLE: Style = Style::new().light_blue();
+const LOCATION_STYLE: Style = Style::new().light_cyan();
+const BROADCAST_STYLE: Style = Style::new().light_cyan();
 
 #[derive(Props, Clone, Default)]
 struct RenderEventProps {
+    scheduled: bool,
     card_width: u16,
     event_id: String,
     date: String,
@@ -170,14 +189,35 @@ fn scheduled_string(date: &str, fallback: &str) -> String {
 
 fn event_to_render_props(json_event: &PayloadEvent) -> Option<RenderEventProps> {
     json_event.competitions.first().map(|competition| {
+        let scheduled = competition.status.type_.name == SCHEDULED_STATUS;
         RenderEventProps {
+            scheduled,
             card_width: MIN_CARD_WIDTH,
             event_id: json_event.id.clone(),
             date: scheduled_string(&competition.date, ""),
             top_team: competition.competitors.get(1).map(team_string).unwrap_or_default(),
-            top_team_score: competition.competitors.get(1).map(|competitor| competitor.score.clone()).unwrap_or_default(),
+            top_team_score: if scheduled {
+                competition.competitors.get(1)
+                    .and_then(|competitor| competitor.records.iter().find(|record| record.name == RECORD_OVERALL))
+                    .map(|record| record.summary.clone())
+                    .unwrap_or_default()
+            } else {
+                competition.competitors.get(1).map(|competitor| competitor.score.clone()).unwrap_or_default()
+            },
             bottom_team: competition.competitors.get(0).map(team_string).unwrap_or_default(),
-            bottom_team_score: competition.competitors.get(0).map(|competitor| competitor.score.clone()).unwrap_or_default(),
+            bottom_team_score: if scheduled {
+                competition.competitors.get(0)
+                    .and_then(|competitor| competitor.records.iter().find(|record| record.name == RECORD_OVERALL))
+                    .map(|record| record.summary.clone())
+                    .unwrap_or_default()
+            } else {
+                competition.competitors.get(0).map(|competitor| competitor.score.clone()).unwrap_or_default()
+            },
+            status: if scheduled {
+                competition.odds.first().and_then(|odds| odds.details.clone())
+            } else {
+                Some(competition.status.type_.short_detail.clone())
+            },
             description: {
                 let mut result = String::new();
                 if let Some(note) = competition.notes.first() {
@@ -191,16 +231,19 @@ fn event_to_render_props(json_event: &PayloadEvent) -> Option<RenderEventProps> 
                 }
                 result
             },
-            status: if competition.status.type_.name != SCHEDULED_STATUS {
-                        Some(competition.status.type_.short_detail.clone())
-                    } else {
-                        None
-                    },
-            location: competition.venue.as_ref()
-                        .map(|venue| format!("{} {}", venue.address.city.as_ref().unwrap_or(&"".into()), 
-                            venue.address.state.as_ref().or(venue.address.country.as_ref()).unwrap_or(&"".into()))).unwrap_or_default(),
-            broadcast: competition.broadcasts.iter()
-                        .find(|broadcast| broadcast.market == "national")
+            location: match competition.venue.as_ref() {
+                Some(CompetitionVenue { address: Some(address) }) => {
+                    format!("{} {}", 
+                        address.city.as_ref().unwrap_or(&"".into()), 
+                        address.state.as_ref().or(address.country.as_ref()).unwrap_or(&"".into())
+                    )
+                },
+                _ => "".to_string()
+            },
+              broadcast: competition.broadcasts.iter()
+                        .find(|broadcast| {                            
+                            broadcast.market == NATIONAL
+                        })
                         .and_then(|broadcast| broadcast.names.first()).cloned().unwrap_or_default()            
         }
     })
@@ -238,38 +281,55 @@ fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
         Border(
             width: Constraint::Length(props.card_width),
             key: props.event_id.clone(),
-            border_style: Style::new().fg(Color::LightGreen),
+            border_style: SCORE_BORDER_STYLE,
             top_title: Some(Line::from(props.date.clone())),                
         ) {
             View(flex_direction: Direction::Horizontal, height: Constraint::Length(1)) {
                 View(width: Constraint::Fill(1)) {
-                    Text(text: props.top_team.clone(), style: Style::new().bold())
+                    Text(text: props.top_team.clone(), style: TEAM_NAME_STYLE)
                 }
-                View(width: Constraint::Length(5)) {
-                    Text(text: props.top_team_score.clone(), alignment: Alignment::Right, style: Style::new().bold())
+                View(width: Constraint::Length(7)) {
+                    Text(text: props.top_team_score.clone(),
+                         alignment: Alignment::Right,
+                         style: if props.scheduled { 
+                            TEAM_RECORD_STYLE
+                         } else {
+                            TEAM_SCORE_STYLE
+                         })
                     }
                 }
                 View(flex_direction: Direction::Horizontal, height: Constraint::Length(1)) {
                     View(width: Constraint::Fill(1)) {
-                        Text(text: props.bottom_team.clone(), style: Style::new().bold())
+                        Text(text: props.bottom_team.clone(), style: TEAM_NAME_STYLE)
                     }
-                    View(width: Constraint::Length(5)) {
-                        Text(text: props.bottom_team_score.clone(), alignment: Alignment::Right, style: Style::new().bold())
+                    View(width: Constraint::Length(7)) {
+                        Text(text: props.bottom_team_score.clone(),
+                             alignment: Alignment::Right,
+                             style: if props.scheduled { 
+                                 TEAM_RECORD_STYLE
+                              } else {
+                                 TEAM_SCORE_STYLE
+                              })
                     }
                 }
                 if let Some(status) = &props.status {
-                    Text(text: status.clone(), style: Style::new().fg(Color::Yellow).bold())
+                    Text(text: status.clone(), 
+                        style: if props.scheduled { 
+                           ODDS_STYLE
+                        } else {
+                           STATUS_STYLE
+                    })
                 }
-                Text(text: props.description.clone(), style: Style::new().fg(Color::Blue))   
+                Text(text: props.description.clone(), style: DESCRIPTION_STYLE)   
                 View(flex_direction: Direction::Horizontal, height: Constraint::Length(1)) {
                     View(width: Constraint::Fill(2)) {
                         Text(text: props.location.clone(),
-                            style: Style::new().fg(Color::LightCyan))
+                            style: LOCATION_STYLE)
                     }
                     View(width: Constraint::Fill(1)) {
                         Text(text: props.broadcast.clone(),
                             alignment: Alignment::Right,
-                            style: Style::new().fg(Color::LightCyan))
+                            style: BROADCAST_STYLE)
                     }
                 }    
             }
@@ -281,11 +341,11 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let now = OffsetDateTime::now_local().expect("Can't get local time");
 
     let (term_width, _term_height) = hooks.use_terminal_size();
-    let mut league = hooks.use_state(|| 0usize);
+    let mut league = hooks.use_state(|| None::<usize>);
     let mut now_unix_timestamp = hooks.use_state(|| now.unix_timestamp());
     let mut selected_date = hooks.use_state(|| now.date());
 
-    let (league_name, league_url) = LEAGUES[league.get()];
+    let (league_name, league_url) = league.get().map(|index| LEAGUES[index]).unwrap_or(("", ""));
     // Snapshot the current value; the closure must own its data ('static).
     let url_value: String = league_url.to_string();  
   
@@ -429,16 +489,14 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                 height: Constraint::Length(LEAGUES.len() as u16 + 2),
             ) {
                 Select::<&'static str>(
-                    top_title: Some(Line::from("Select League").centered()),
-                    bottom_title: Some(Line::from("[Esc]:Cancel ").right_aligned()), 
+                    top_title: Some(Line::from("Select League").centered().white()),
+                    bottom_title: Some(Line::from("[Esc]:Cancel ").right_aligned().gray()), 
                     items: LEAGUES.iter().map(|(name, _)| *name).collect::<Vec<&'static str>>(),
-                    default_index: Some(league.get()),
+                    default_index: league.get().unwrap_or(0),
                     on_select: move |name: &'static str| {
-                        if let Some(i) = LEAGUES.iter().position(|(n, _)| *n == name) {
-                            league.set(i);
-                        }
+                        league.set(LEAGUES.iter().position(|(n, _)| *n == name));
                         league_modal_open.set(false);
-                    },
+                    }
                 )
             }
             Modal(
@@ -449,9 +507,9 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                 height: Constraint::Length(10),
             ) {
                 Border(
-                    border_style: Style::new().blue(),
-                    top_title: Line::from(" Select Day ").blue().bold().centered(),
-                    bottom_title: Line::from(" [Esc]: Cancel ").dark_gray().centered(),
+                    border_style: Style::new().light_blue(),
+                    top_title: Line::from(" Select Day ").light_blue().bold().centered(),
+                    bottom_title: Line::from(" [Esc]: Cancel ").gray().centered(),
                 ) {
                     TuiDatePicker(
                         date: selected_date.get(),

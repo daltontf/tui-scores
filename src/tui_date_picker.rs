@@ -13,7 +13,7 @@ pub struct CalendarDate(Date);
 
 impl Default for CalendarDate {
     fn default() -> Self {
-        Self(OffsetDateTime::now_utc().date()) 
+        Self(OffsetDateTime::now_local().expect("Can't get local time").date()) 
     }
 }
 
@@ -57,7 +57,7 @@ pub fn TuiDatePicker<'a>(mut hooks: Hooks, props: &mut TuiDatePickerProps<'stati
             KeyCode::Down => current.checked_add(Duration::weeks(1)),
             KeyCode::PageUp => add_years(current, -1),
             KeyCode::PageDown => add_years(current, 1),
-            KeyCode::Home => Some(OffsetDateTime::now_utc().date()),
+            KeyCode::Home => Some(OffsetDateTime::now_local().expect("Can't get local time").date()),
             KeyCode::Enter => {
                 on_select(date.get());
                 Option::None
@@ -102,12 +102,14 @@ impl Component for CalendarView {
     }
 
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_, '_>) {
-        let mut event_store = CalendarEventStore::today(Style::default().underlined().bold());
+        let todays_style = Style::new().underlined().light_green();
+        
+        let mut event_store = CalendarEventStore::today(todays_style);
 
         if self.date.0 == OffsetDateTime::now_local().expect("Can't get local time").date() {
-            event_store.add(self.date.0, Style::default().underlined().blue().bold());
+            event_store.add(self.date.0, todays_style.light_blue());
         } else {
-            event_store.add(self.date.0, Style::default().blue().bold());
+            event_store.add(self.date.0, Style::new().light_blue().bold());
         }
         
         let monthly = Monthly::new(

@@ -9,6 +9,18 @@ An exercise in "kicking the tires" with Ratatui-Kit [https://yexiyue.github.io/r
 - All sports list the home team second which is against the convention used by soccer.
 - Currently lagging when displaying large amounts of events like some days of NCAA sports. This issue could be a Ratatui Kit problem. 
 
+### Screenshots
+
+![Select League](./select_league.png)
+
+![Current Day](./inprogress.png)
+
+![Resized](./resized.png)
+
+![Upcoming](./upcoming.png)
+
+![Past Date](./pastdate.png)
+
 ### Future Features
 - The highlight dates on the date picker where there are events for the current league (Maybe). 
 - When running check for existing of hidden config file in home directory. If it exists use it to provide the list of leagues. 

@@ -1,3 +1,5 @@
 /target
 .zed
 *.lock
+flamegraph.*
+perf.data*

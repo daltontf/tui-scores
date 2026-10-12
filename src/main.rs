@@ -18,6 +18,7 @@ use tokio;
 use time::{OffsetDateTime};
 
 use tui_scores::tui_date_picker::{TuiDatePicker};
+use tui_input::backend::crossterm::EventHandler;
 
 // Treats a null array as empty and drops null elements, e.g. `null` or `[null]` -> `[]`.
 fn vec_skip_nulls<'de, D, T>(d: D) -> Result<Vec<T>, D::Error>
@@ -393,8 +394,7 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     });
 
     let mut datepicker_modal_open = hooks.use_state(|| false);
-    let datepicker_model_layer = hooks.use_input_layer(datepicker_modal_open.get(), true);
-    
+    let datepicker_model_layer = hooks.use_input_layer(datepicker_modal_open.get(), true);   
     hooks.use_event_handler(EventScope::Layer(datepicker_model_layer), EventPriority::High, move |event| {
         let Event::Key(key) = event else {
             return EventResult::Ignored;
@@ -411,6 +411,51 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             _ => EventResult::Ignored,
         }
     });
+
+    let filter_input = hooks.use_state(tui_input::Input::default);
+    let filter_input_read = filter_input.read().clone();
+    let mut filter_applied = hooks.use_state(|| None::<String>);
+    
+    let mut filter_modal_open = hooks.use_state(|| false);
+    let filter_modal_layer = hooks.use_input_layer(filter_modal_open.get(), true);
+
+    hooks.use_event_handler(EventScope::Layer(filter_modal_layer), EventPriority::High, move |event| {
+        let Event::Key(key) = event else {
+            return EventResult::Ignored;
+        };
+        if key.kind != KeyEventKind::Press {
+            return EventResult::Ignored;
+        }
+
+        match key.code {
+            KeyCode::Esc => {
+                filter_modal_open.set(false);
+                EventResult::Consumed
+            },
+            KeyCode::Delete => {
+                filter_input.write().reset();
+                filter_applied.set(None);
+                filter_modal_open.set(false);
+                EventResult::Consumed
+            },
+            KeyCode::Enter => {
+                let filter_text = filter_input.read().value().trim().to_string();
+                if filter_text.is_empty() {
+                    filter_applied.set(None);
+                } else {
+                    filter_applied.set(Some(filter_text));
+                }
+                filter_modal_open.set(false);
+                EventResult::Consumed
+            }
+            _ => {
+                // The Input component only renders; feed keystrokes into its state here.
+                filter_input.write().handle_event(&event);
+                EventResult::Consumed
+            }
+        }
+    });
+
 
     hooks.use_event_handler(EventScope::Current, EventPriority::Normal, move |event| {
         let Event::Key(key) = event else {
@@ -429,6 +474,10 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                 datepicker_modal_open.set(true);
                 EventResult::Consumed
             },
+            KeyCode::Char('f') | KeyCode::Char('F') => {
+                filter_modal_open.set(true);
+                EventResult::Consumed
+            },
             KeyCode::Char('r') | KeyCode::Char('R') if now.date() == selected_date.get() => {
                 now_unix_timestamp.set(now.unix_timestamp()); // force a fetch
                 EventResult::Consumed
@@ -442,6 +491,15 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     });
 
     let event_props = json_payload.data.read().as_ref().map(|payload| payload.events.iter()
+        .filter(|event| {          
+            let filter_applied_read = filter_applied.read();
+            filter_applied_read.is_none() || event.competitions.first().map(|competition| {
+                let filter = filter_applied_read.as_ref().unwrap();
+                competition.competitors.iter().any(|competitor| {
+                    competitor.team.display_name.contains(filter)
+                })
+            }).unwrap_or(false)
+        })
         .filter_map(event_to_render_props)
         .collect::<Vec<RenderEventProps>>())
         .unwrap_or_default();
@@ -455,6 +513,8 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     // Don't waste space on the status line if all events are only scheduled; otherwise, leave room for the status line.
     let cell_height = if event_props.iter().all(|event| event.status.is_none()) { 6 } else { 7 };
 
+    let filter_text = filter_applied.read().as_deref().map(|filter| format!("- Teams matching \"*{}*\"", filter)).unwrap_or_default();
+      
     element!(
         Center(
             width: Constraint::Percentage(100),
@@ -463,14 +523,16 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             ScrollView(
                 flex_direction: Direction::Vertical,
                 block: Block::bordered()
-                    .title(Line::from(format!(" {} Scores {:04}-{:02}-{:02} ", 
+                    .title(Line::from(format!(" {} {:04}-{:02}-{:02}{} ", 
                         league_name,
                         selected_date.get().year(),
                         u8::from(selected_date.get().month()),
-                        selected_date.get().day()
+                        selected_date.get().day(),                       
+                        filter_text
                     )).centered())
                     .title_bottom("[L]:League ")
                     .title_bottom(" [D]:Date ")
+                    .title_bottom(" [F]:Filter ")
                     .title_bottom(refresh_text)
                     .title_bottom(Line::from("[Q]:Quit ").right_aligned())
             ) {
@@ -518,6 +580,27 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                             datepicker_modal_open.set(false);
                         }
                     )
+                }
+            }
+            // Only mount the filter modal while open: a closed Modal stops updating its children
+            // but they still draw, leaving the Input's cursor on screen.
+            if filter_modal_open.get() {
+                Modal(
+                    open: true,
+                    layer: Some(filter_modal_layer),
+                    width: Constraint::Length(36),
+                    height: Constraint::Length(3),
+                ) {
+                    Border(
+                        height: Constraint::Length(3),
+                        border_style: Style::new().light_blue(),
+                        top_title: Line::from("Teams containing").light_blue().centered(),
+                        bottom_title: Line::from("[Del]: Clear - [Esc]: Cancel").gray().centered(),
+                    ) { 
+                        Input(
+                            input: filter_input_read,
+                        )
+                    }
                 }
             }
         }

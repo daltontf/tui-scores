@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
-ratatui-kit = { version = "0.10.3", features = ["atom"] }
+ratatui-kit = { version = "0.10.3", features = ["atom", "input"] }
 time = { version = "0.3.55", features = ["formatting"] }
 reqwest = { version = "0.13", features = ["json"] }
 serde = { version = "1", features = ["derive"] }

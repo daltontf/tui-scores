@@ -128,16 +128,38 @@ struct JsonPayload {
     events: Vec<PayloadEvent>,
 }
 
-const LEAGUES_CSV: &str = include_str!("../leagues.csv");
+// Reads ~/.config/tui_scores/leagues.csv, creating it from default content if it doesn't exist.
+// Falls back to default content on any I/O error.
+fn load_leagues_csv(default_leagues_csv: String) -> String {    
+    let Some(home) = std::env::var_os("HOME") else {
+        return default_leagues_csv;
+    };    
+    let path = std::path::Path::new(&home).join(".config/tui_scores/leagues.csv");
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("File containing league data {} doesn't exist. Creating a default one.", &path.display());
+            eprintln!("Edit this file to add or remove leagues.");
+            eprintln!("Each line should be a league name and its ESPN API URL separated by a comma.");
+            if let Some(dir) = path.parent() {                
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(&path, &default_leagues_csv);
+            default_leagues_csv
+        }
+        Err(_) => default_leagues_csv,
+    }
+}
 
-// (name, url) pairs borrowed from LEAGUES_CSV; index 0 is the empty "no league" entry.
 static LEAGUES: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
-    LEAGUES_CSV.lines().filter_map(|line| {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+    let default_leagues_csv = include_str!("../leagues.csv").to_string();
+    let leagues_csv = load_leagues_csv(default_leagues_csv).leak();
+    leagues_csv.lines().filter_map(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
              return None;
         }
-        let (name, url) = line.split_once(',')?;
+        let (name, url) = trimmed.split_once(',')?;
         Some((name.trim().trim_matches('"'), url.trim().trim_matches('"')))
     }).collect()
 });
@@ -496,11 +518,11 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             filter_applied_read.is_none() || event.competitions.first().map(|competition| {
                 let filter = filter_applied_read.as_ref().unwrap();
                 competition.competitors.iter().any(|competitor| {
-                    competitor.team.display_name.contains(filter)
-                })
+                    competitor.team.display_name.to_ascii_uppercase()
+                        .contains(&filter.to_ascii_uppercase())})
             }).unwrap_or(false)
         })
-        .filter_map(event_to_render_props)
+        .filter_map(event_to_render_props) 
         .collect::<Vec<RenderEventProps>>())
         .unwrap_or_default();
 
@@ -609,6 +631,7 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
 
 #[tokio::main]
 async fn main() {
+    let _ = LEAGUES.len(); // force the LazyLock to initialize, so we can see any errors before TUI starts
     element!(Scores)
         .fullscreen()
         .await

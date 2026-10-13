@@ -1,6 +1,7 @@
 "NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 
-# CFL last date 2022 "CFL", "https://site.api.espn.com/apis/site/v2/sports/football/cfl/scoreboard"
+# Begin lines with # for comments.
+# CFL (last date 2022) "CFL", "https://site.api.espn.com/apis/site/v2/sports/football/cfl/scoreboard"
 #"UFL", "https://site.api.espn.com/apis/site/v2/sports/football/ufl/scoreboard"
 #"XFL", "https://site.api.espn.com/apis/site/v2/sports/football/xfl/scoreboard"
 
@@ -10,7 +11,7 @@
 "NBA", "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
 #"NBA G-League", "https://site.api.espn.com/apis/site/v2/sports/basketball/nba-development/scoreboard"
 #"NBL (AUS)", "https://site.api.espn.com/apis/site/v2/sports/basketball/nbl/scoreboard"
-"FIBA", "https://site.api.espn.com/apis/site/v2/sports/basketball/fiba/scoreboard"
+#"FIBA", "https://site.api.espn.com/apis/site/v2/sports/basketball/fiba/scoreboard"
 "WNBA", "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard"
 "NHL", "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard"
 
@@ -39,7 +40,18 @@
 "Italian Serie A", "http://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard" 
 "French Ligue 1", "http://site.api.espn.com/apis/site/v2/sports/soccer/fra.1/scoreboard"
 "Spanish LALIGA", "http://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard"
+"Portuguese Liga", "http://site.api.espn.com/apis/site/v2/sports/soccer/por.1/scoreboard"
+"Dutch Eredivisie", "http://site.api.espn.com/apis/site/v2/sports/soccer/ned.1/scoreboard"
+"Belgian Pro League", "http://site.api.espn.com/apis/site/v2/sports/soccer/bel.1/scoreboard"
+"Brazilian Serie A", "http://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard"
+"Argentine LPF", "http://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/scoreboard"
 "UEFA Champions League", "http://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard"
 "UEFA Europa League", "http://site.api.espn.com/apis/site/v2/sports/soccer/uefa.europa/scoreboard"
 "FIFA World Cup", "http://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard"
 "FIFA Women's World Cup", "http://site.api.espn.com/apis/site/v2/sports/soccer/fifa.wwc/scoreboard"
+
+# There are a large number of soccer leagues and tournaments. 
+# One can navigate to https://www.espn.com/soccer/scoreboard and select the 'Choose a League' dropdown.
+# Notice the URL changes to something like https://www.espn.com/soccer/scoreboard/_/league/ger.dfb_pokal for the 'German Cup'.
+# 'ger.dfb_pokal' is the code for the tournament. Adding line like below (or uncommenting in this case) to add it here:
+# "German Cup", "http://site.api.espn.com/apis/site/v2/sports/soccer/ger.dfb_pokal/scoreboard"

@@ -9,13 +9,14 @@ use ratatui_kit::{
     },
 };
 
-use chrono::{Local, NaiveDateTime};
+use chrono::{Local, NaiveDateTime, Datelike};
 use reqwest::Response;
-use serde::Deserialize;
+use serde::{Deserialize, de::IgnoredAny};
+use std::collections::HashSet;
 use std::sync::LazyLock;
 use tokio;
 
-use time::{OffsetDateTime};
+use time::{OffsetDateTime, Date};
 
 use tui_scores::tui_date_picker::{TuiDatePicker};
 use tui_input::backend::crossterm::EventHandler;
@@ -28,6 +29,23 @@ where
 {
     let items = Option::<Vec<Option<T>>>::deserialize(d)?;
     Ok(items.unwrap_or_default().into_iter().flatten().collect())
+}
+
+fn only_strings<'de, D>(d: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Item {
+        Str(String),
+        Other(IgnoredAny),
+    }
+    let items = Option::<Vec<Item>>::deserialize(d)?;   // also treats null as empty
+    Ok(items.unwrap_or_default().into_iter().filter_map(|item| match item {
+        Item::Str(s) => Some(s),
+        Item::Other(_) => None,
+    }).collect())
 }
 
 #[derive(Deserialize, Clone)]
@@ -123,8 +141,19 @@ struct PayloadEvent {
     competitions: Vec<EventCompetition>
 }
 
+#[derive(Deserialize, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PayloadLeague {
+    calendar_is_whitelist: Option<bool>,
+    calendar_start_date: Option<String>,
+    calendar_end_date: Option<String>,
+    #[serde(default, deserialize_with = "only_strings")]
+    calendar: Vec<String>
+}
+
 #[derive(Deserialize)]
 struct JsonPayload {
+    leagues: Vec<PayloadLeague>,
     events: Vec<PayloadEvent>,
 }
 
@@ -274,7 +303,7 @@ fn event_to_render_props(json_event: &PayloadEvent) -> Option<RenderEventProps> 
 
 async fn fetch_scores(url: &str, date: time::Date, cache_avoidance: &str) -> JsonPayload {
     if url.is_empty() {
-        return JsonPayload { events: vec![] };
+        return JsonPayload { leagues: vec![], events: vec![] };
     }
 
     // ESPN expects dates=YYYYMMDD; some league urls already carry a query string.
@@ -357,6 +386,12 @@ fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
                 }    
             }
       )  
+}
+
+fn date_string_to_maybe_date(date_str: &String) -> Option<Date> {
+    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%MZ").ok()
+        .map(|utc| utc.and_utc().with_timezone(&Local).date_naive())
+        .and_then(|nd| Date::from_ordinal_date(nd.year(), nd.ordinal() as u16).ok())
 }
 
 #[component]
@@ -536,7 +571,30 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let cell_height = if event_props.iter().all(|event| event.status.is_none()) { 6 } else { 7 };
 
     let filter_text = filter_applied.read().as_deref().map(|filter| format!("- Teams matching \"*{}*\"", filter)).unwrap_or_default();
-      
+     
+    let event_dates: Vec<Date> = json_payload.data.read().as_ref()
+        .and_then(|payload| payload.leagues.first())
+        .map(|league| match (league.calendar_is_whitelist, &league.calendar_start_date, &league.calendar_end_date) {
+                        (Some(true), _, _) => 
+                            league.calendar.iter()
+                                .filter_map(date_string_to_maybe_date)
+                                .collect::<Vec<Date>>(),
+                        (Some(false), Some(start_date), Some(end_date)) => {
+                            // Black list: every day in the season except the ones listed in the calendar
+                            let excluded: HashSet<Date> = league.calendar.iter()
+                                .filter_map(date_string_to_maybe_date)
+                                .collect();
+                            match (date_string_to_maybe_date(&start_date), date_string_to_maybe_date(&end_date)) {
+                              (Some(start), Some(end)) => std::iter::successors(Some(start), |date| date.next_day())
+                                  .take_while(|date| *date <= end)
+                                  .filter(|date| !excluded.contains(date))
+                                  .collect(),
+                              _ => vec![]
+                            }
+                        },
+                        _ => vec![]
+                      }).unwrap_or_default(); 
+    
     element!(
         Center(
             width: Constraint::Percentage(100),
@@ -597,6 +655,7 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                 ) {
                     TuiDatePicker(
                         date: selected_date.get(),
+                        event_dates,
                         on_select: move |date| { 
                             selected_date.set(date);
                             datepicker_modal_open.set(false);
@@ -631,7 +690,8 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
 
 #[tokio::main]
 async fn main() {
-    let _ = LEAGUES.len(); // force the LazyLock to initialize, so we can see any errors before TUI starts
+    let _ = LEAGUES.len(); // force the LazyLock to initialize, so we can print any errors before TUI starts
+
     element!(Scores)
         .fullscreen()
         .await

@@ -26,6 +26,7 @@ impl Into<CalendarDate> for Date {
 #[derive(Props, Default)]
 pub struct TuiDatePickerProps<'a> {
     pub date: CalendarDate,
+    pub event_dates: Vec<Date>,
     pub on_select: Handler<'a, Date>
 }
 
@@ -71,7 +72,7 @@ pub fn TuiDatePicker<'a>(mut hooks: Hooks, props: &mut TuiDatePickerProps<'stati
         EventResult::Consumed
     });
 
-    element!(CalendarView(date: CalendarDate(date.get())))
+    element!(CalendarView(date: CalendarDate(date.get()), event_dates: props.event_dates.clone()))
 }
 
 /// Shifts a date by whole years, clamping Feb 29 to Feb 28 when the target year isn't a leap year.
@@ -82,14 +83,18 @@ fn add_years(date: Date, years: i32) -> Option<Date> {
 }
 
 struct CalendarView {
-   date: CalendarDate
+   date: CalendarDate,
+   event_dates: Vec<Date>
 }
 
 impl Component for CalendarView {
     type Props<'a> = TuiDatePickerProps<'a>;
 
     fn new(props: &Self::Props<'_>) -> Self {
-        Self { date: props.date.clone() }
+        Self { 
+            date: props.date.clone(),
+            event_dates: props.event_dates.clone()
+        }
     }
 
     fn update(
@@ -99,18 +104,30 @@ impl Component for CalendarView {
         _updater: &mut ComponentUpdater,
     ) {
         self.date = props.date.clone();
+        self.event_dates = props.event_dates.clone();
     }
-
+    
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_, '_>) {
+        let today = OffsetDateTime::now_local().expect("Can't get local time").date();  
+        
         let todays_style = Style::new().underlined().light_green();
         
         let mut event_store = CalendarEventStore::today(todays_style);
 
-        if self.date.0 == OffsetDateTime::now_local().expect("Can't get local time").date() {
-            event_store.add(self.date.0, todays_style.light_blue());
-        } else {
-            event_store.add(self.date.0, Style::new().light_blue().bold());
+        let event_date_style = Style::new().bold();
+
+        let mut date_has_event = false;
+
+        for event_date in self.event_dates.iter() {
+            event_store.add(*event_date, if today == *event_date { todays_style.bold() } else { event_date_style });
+            date_has_event |= self.date.0 == *event_date;
         }
+       
+        event_store.add(self.date.0, match (self.date.0 == today, date_has_event) {
+            (true, true) => todays_style.bold().blue(),
+            (true, false) => todays_style.blue(),
+            _ => Style::new().blue() 
+        });
         
         let monthly = Monthly::new(
             self.date.0,

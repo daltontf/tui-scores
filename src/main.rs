@@ -232,6 +232,12 @@ fn team_string(competitor: &CompetitionCompetitor) -> String {
     }
 }
 
+fn date_string_to_maybe_date(date_str: &String) -> Option<Date> {
+    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%MZ").ok()
+        .map(|utc| utc.and_utc().with_timezone(&Local).date_naive())
+        .and_then(|nd| Date::from_ordinal_date(nd.year(), nd.ordinal() as u16).ok())
+}
+
 // ESPN dates look like "2026-09-23T00:00Z" (no seconds), so RFC 3339 parsing won't work.
 fn scheduled_string(date: &str, fallback: &str) -> String {
     NaiveDateTime::parse_from_str(date, "%Y-%m-%dT%H:%MZ")
@@ -388,12 +394,6 @@ fn RenderEvent(props: &RenderEventProps) -> impl Into<AnyElement<'static>> {
       )  
 }
 
-fn date_string_to_maybe_date(date_str: &String) -> Option<Date> {
-    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%MZ").ok()
-        .map(|utc| utc.and_utc().with_timezone(&Local).date_naive())
-        .and_then(|nd| Date::from_ordinal_date(nd.year(), nd.ordinal() as u16).ok())
-}
-
 #[component]
 fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let now = OffsetDateTime::now_local().expect("Can't get local time");
@@ -407,11 +407,11 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     // Snapshot the current value; the closure must own its data ('static).
     let url_value: String = league_url.to_string();  
   
-    let refresh_text = if now.date() == selected_date.get() && !url_value.is_empty() {
-        " [R]:Refresh "
-    } else {
-        ""
-    };  
+    let home_refresh_text = match (now.date() == selected_date.get(), url_value.is_empty()) {
+        (true, false) => " [R]:Refresh ",
+        (false, _) => " [Home]: Today ",
+        _ => "" 
+    }; 
 
     let date_value = selected_date.get();
     let now_unix_timestamp_value = now_unix_timestamp.get();
@@ -539,6 +539,10 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                 now_unix_timestamp.set(now.unix_timestamp()); // force a fetch
                 EventResult::Consumed
             }
+            KeyCode::Home if now.date() != selected_date.get() => {
+                selected_date.set(now.date());
+                EventResult::Consumed
+            }
             KeyCode::Char('q') | KeyCode::Char('Q') => {
                 exit();
                 EventResult::Consumed
@@ -613,7 +617,7 @@ fn Scores(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     .title_bottom("[L]:League ")
                     .title_bottom(" [D]:Date ")
                     .title_bottom(" [F]:Filter ")
-                    .title_bottom(refresh_text)
+                    .title_bottom(home_refresh_text)
                     .title_bottom(Line::from("[Q]:Quit ").right_aligned())
             ) {
                 for (i, row) in event_props.chunks(columns).enumerate() {

@@ -17,18 +17,28 @@
 
 "MLS", "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard"
 
+"National Lacrosse League","http://site.web.api.espn.com/apis/site/v2/sports/lacrosse/nll/scoreboard"
+"Premier Lacrosse League","http://site.web.api.espn.com/apis/site/v2/sports/lacrosse/pll/scoreboard"
+
+"Major League Rugby","http://site.api.espn.com/apis/site/v2/sports/rugby/289262/scoreboard"
+
 "NCAA Football (FBS)", "http://site.web.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80"
 #"NCAA Football (FCS)", "http://site.web.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=81"
 #"NCAA Football (DII/DIII)", "http://site.web.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=35"
 "NCAA Men's Basketball", "http://site.web.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=80"
 "NCAA Men's Soccer", "http://site.web.api.espn.com/apis/site/v2/sports/soccer/usa.ncaa.m.1/scoreboard"
-"NCAA Men's Hockey", "http://site.api.espn.com/apis/site/v2/sports/hockey/mens-college-hockey/scoreboard"    
+"NCAA Men's Hockey", "http://site.api.espn.com/apis/site/v2/sports/hockey/mens-college-hockey/scoreboard"  
+#"NCAA Men's Lacrosse", "http://site.web.api.espn.com/apis/site/v2/sports/lacrosse/mens-college-lacrosse/scoreboard"  
+#"NCAA Men's Water Polo", "http://site.web.api.espn.com/apis/site/v2/sports/water-polo/mens-college-water-polo/scoreboard"  
 "NCAA Baseball", "http://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard" 
 "NCAA Women's Basketball", "http://site.web.api.espn.com/apis/site/v2/sports/basketball/womens-college-basketball/scoreboard"
 "NCAA Women's Volleyball", "http://site.web.api.espn.com/apis/site/v2/sports/volleyball/womens-college-volleyball/scoreboard"
 "NCAA Women's Soccer", "http://site.web.api.espn.com/apis/site/v2/sports/soccer/usa.ncaa.w.1/scoreboard"
 "NCAA Women's Hockey", "http://site.api.espn.com/apis/site/v2/sports/hockey/womens-college-hockey/scoreboard"    
-"NCAA Women's Softball", "http://site.api.espn.com/apis/site/v2/sports/baseball/college-softball/scoreboard"
+#"NCAA Women's Field Hockey", "http://site.web.api.espn.com/apis/site/v2/sports/field-hockey/womens-college-field-hockey/scoreboard" 
+#"NCAA Women's Lacrosse", "http://site.web.api.espn.com/apis/site/v2/sports/lacrosse/womens-college-lacrosse/scoreboard" 
+#"NCAA Women's Water Polo", "http://site.web.api.espn.com/apis/site/v2/sports/water-polo/womens-college-water-polo/scoreboard"  
+"NCAA Softball", "http://site.api.espn.com/apis/site/v2/sports/baseball/college-softball/scoreboard"
 "NWSL", "http://site.api.espn.com/apis/site/v2/sports/soccer/usa.nwsl/scoreboard"
 "USL Championship", "http://site.api.espn.com/apis/site/v2/sports/soccer/usa.usl.1/scoreboard"
 #"U.S. Open Cup", "http://site.api.espn.com/apis/site/v2/sports/soccer/usa.open/scoreboard"
@@ -50,8 +60,27 @@
 "FIFA World Cup", "http://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard"
 "FIFA Women's World Cup", "http://site.api.espn.com/apis/site/v2/sports/soccer/fifa.wwc/scoreboard"
 
+"Australian Football", "http://site.api.espn.com/apis/site/v2/sports/australian-football/afl/scoreboard"
+"National Rugby League (AUS)","http://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard"
+
+
 # There are a large number of soccer leagues and tournaments. 
-# One can navigate to https://www.espn.com/soccer/scoreboard and select the 'Choose a League' dropdown.
-# Notice the URL changes to something like https://www.espn.com/soccer/scoreboard/_/league/ger.dfb_pokal for the 'German Cup'.
-# 'ger.dfb_pokal' is the code for the tournament. Adding line like below (or uncommenting in this case) to add it here:
+# One query for leagues via 'https://sports.core.api.espn.com/v2/sports/{sport}/leagues'
+# Where sport can be:
+# "australian-football": "Australian Football",
+# "baseball": "Baseball",
+# "basketball": "Basketball",
+# "field-hockey": "Field Hockey",
+# "football": "Football",
+# "hockey": "Hockey",
+# "lacrosse": "Lacrosse",
+# "rugby": "Rugby",
+# "rugby-league": "Rugby League",
+# "soccer": "Soccer",
+# "volleyball": "Volleyball",
+# "water-polo": "Water Polo",
+# 
+# The JSON returns should be a list of leagues (soccer requires pagination with 'page' query parameter)
+# The last part of the $ref before query parameters is the 'slug' for the league. Or one can follow the $href link
+# for the 'slug' field. For example it is 'ger.dfb_pokal' for the "German Cup" and would look like:
 # "German Cup", "http://site.api.espn.com/apis/site/v2/sports/soccer/ger.dfb_pokal/scoreboard"

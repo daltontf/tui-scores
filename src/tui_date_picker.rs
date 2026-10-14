@@ -114,7 +114,7 @@ impl Component for CalendarView {
         
         let mut event_store = CalendarEventStore::today(todays_style);
 
-        let event_date_style = Style::new().bold();
+        let event_date_style = Style::new().bold().white();
 
         let mut date_has_event = false;
 
@@ -126,6 +126,7 @@ impl Component for CalendarView {
         event_store.add(self.date.0, match (self.date.0 == today, date_has_event) {
             (true, true) => todays_style.bold().blue(),
             (true, false) => todays_style.blue(),
+            (false, true) => event_date_style.blue(),
             _ => Style::new().blue() 
         });
         

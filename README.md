@@ -21,7 +21,3 @@ An exercise in "kicking the tires" with Ratatui-Kit [https://yexiyue.github.io/r
 ![Upcoming](./upcoming.png)
 
 ![Past Date](./pastdate.png)
-
-### Future Features
-- Highlight dates on the date picker where there are events for the current league. This may limited to certain
-leagues that provide a dicrete list of dates and it would be for the last event season but that is better than nothing. 
